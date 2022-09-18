@@ -1,23 +1,25 @@
 package com.walfud.puyl
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 
 import com.walfud.extention.toSimpleString
 import java.time.LocalDate
 import java.time.LocalTime
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 
 const val ROUTINE_TASK = "task"
@@ -29,17 +31,62 @@ fun TaskPage(
     LazyColumn(
         modifier = Modifier.fillMaxSize()
     ) {
+        // header
         item {
-            TaskItem(taskVM.beginDate, taskVM.endDate, taskVM.testData())
+            TaskHeader()
+        }
+
+        // tasks
+        items(taskVM.taskDatas) { taskData ->
+            val taskContext = TaskContext(taskData.name, taskVM.beginDate, taskVM.endDate)
+            TaskItem(taskContext, taskVM.testData())
         }
     }
+}
+
+@Composable
+fun TaskHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // name
+        Text(
+            "任务名",
+            modifier = Modifier.width(100.dp),
+            textAlign = TextAlign.Center,
+        )
+        Box(
+            modifier = Modifier.width(10.dp).height(8.dp).align(Alignment.CenterVertically).background(Color.Black)
+        )
+        Text(
+            "职能",
+            modifier = Modifier.width(60.dp),
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            "对接人",
+            modifier = Modifier.width(80.dp),
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            "排期",
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Preview
+@Composable
+fun foo() {
+    TaskHeader()
 }
 
 /**
  * |----------------------------------------------- TaskData -------------------------------------------------|
  *           |---------------------------------------------- ExecutorData ------------------------------------|
- *                              |----------------------------------- ActivityData ----------------------------|
- * | TaskDesc |   name  |   who   |                           activity                                        |
+ *                                |--------------------------------- ActivityData ----------------------------|
+ * | TaskDesc |   name  |   who   |                              activity                                     |
  * |==========================================================================================================|
  * |          |    PM   | walfud  |   EVALUATE@("2022-09-04", "2022-09-04"), DEV@("2022-09-04", "2022-11-11") |
  * |  Task A  |   iOS   | tony    |   DEV@("2022-09-08", "2022-12-04")                                        |
@@ -47,85 +94,87 @@ fun TaskPage(
  * |==========================================================================================================|
  */
 @Composable
-fun TaskItem(beginDate: LocalDate, endDate: LocalDate, taskData: TaskData) {
+fun TaskItem(taskContext: TaskContext, taskData: TaskData) {
     Row(
         modifier = Modifier.fillMaxWidth().border(1.dp, Color.Black)
     ) {
-        // task
+        // name
         Text(
             taskData.name,
             modifier = Modifier.fillMaxSize(),
             textAlign = TextAlign.Center,
         )
 
-        // name & who
-        Column {
-            taskData.executors.forEach { executorData ->
-                Text(
-                    executorData.name,
-                    modifier = Modifier.width(80.dp),
-                )
+        // executors
+        LazyColumn {
+            items(taskData.executors) { execData ->
+                Executor(taskContext, execData)
             }
-        }
-        Column {
-            taskData.executors.forEach { executorData ->
-                Text(
-                    executorData.who,
-                    modifier = Modifier.width(80.dp),
-                )
-            }
-        }
-
-        // activity
-        val dateCount = (endDate.toEpochDay() - beginDate.toEpochDay() + 1).toInt()
-        if (dateCount <= 0) {
-            return
-        }
-        val matrix = Array<Array<FlatActData?>>(taskData.executors.size) { Array(dateCount) { null } }
-        taskData.executors.forEachIndexed { execDataIndex, executorData ->
-            executorData.acts.forEach { actData ->
-                if (actData.beginDate == null || actData.endDate == null) {
-                    Logger.e("...")
-                    return@forEach
-                }
-                val actBeginDate = actData.beginDate
-                val actEndDate = actData.endDate
-                if (actEndDate.isBefore(actBeginDate)) {
-                    Logger.e("...")
-                    return@forEach
-                }
-
-                var currDate = LocalDate.from(actBeginDate)
-                var i = 0L
-                while (true) {
-                    currDate = currDate.plusDays(i)
-                    if (currDate.isAfter(actEndDate) || currDate.isAfter(endDate)) {
-                        break
-                    }
-
-                    val pos = (currDate.toEpochDay() - endDate.toEpochDay()).toInt()
-                    matrix[execDataIndex][pos] = FlatActData(
-                        taskData.name,
-                        executorData.name,
-                        executorData.who,
-                        actData.type,
-                        currDate,
-                    )
-
-                    i++
-                }
-            }
-        }
-
-        LazyRow {
-
         }
     }
 }
 
 @Composable
-fun ActivityItem() {
+fun Executor(taskContext: TaskContext, executorData: ExecutorData) {
+    // name
+    Text(
+        executorData.name,
+        modifier = Modifier.width(80.dp),
+    )
 
+    // who
+    Text(
+        executorData.who,
+        modifier = Modifier.width(80.dp),
+    )
+
+    // activity
+    val dayCount = (taskContext.endDate.toEpochDay() - taskContext.beginDate.toEpochDay() + 1).toInt()
+    if (dayCount <= 0) {
+        return
+    }
+    val actArr = Array(dayCount) { index ->
+        val currDate = taskContext.beginDate.plusDays(index.toLong())
+        val act = executorData.acts.find { actData ->
+            val actBeginDate = actData.beginDate
+            val actEndDate = actData.endDate
+            if (actBeginDate == null || actEndDate == null) {
+                return@find false
+            }
+            if (actEndDate.isBefore(actBeginDate)) {
+                Logger.e("...")
+                return@find false
+            }
+            return@find actBeginDate <= currDate && currDate <= actEndDate
+        }
+
+        return@Array act?.type ?: ActivityType.DEFAULT
+    }
+    LazyRow {
+        items(actArr) { actData ->
+            ActivityItem(actData)
+        }
+    }
+}
+
+@Composable
+fun ActivityItem(actType: ActivityType) {
+    val (borderColor, bgColor) = when (actType) {
+        ActivityType.DEFAULT -> listOf(Color.LightGray, Color.Black)
+        ActivityType.PRE_EVALUATE -> listOf(Color.LightGray, Color.Black)
+        ActivityType.EVALUATE -> listOf(Color.LightGray, Color.Black)
+        ActivityType.DEV -> listOf(Color.LightGray, Color.Black)
+        ActivityType.JOINT_DEBUG -> listOf(Color.LightGray, Color.Black)
+        ActivityType.TEST -> listOf(Color.LightGray, Color.Black)
+        ActivityType.PUBLISH -> listOf(Color.LightGray, Color.Black)
+        else -> listOf(Color.LightGray, Color.Black)
+    }
+
+    Box(
+        modifier = Modifier.size(24.dp, 16.dp)
+            .border(1.dp, borderColor)
+            .background(bgColor),
+    )
 }
 
 data class TaskData(
@@ -140,7 +189,7 @@ data class ExecutorData(
 )
 
 enum class ActivityType {
-    DEFAULT,        // reserved
+    DEFAULT,        // 空闲
 
     PRE_EVALUATE,   // 预评
     EVALUATE,       // 详评
@@ -156,17 +205,16 @@ data class ActivityData(
     val endDate: LocalDate?,       // 2022-09-05]
 )
 
-data class FlatActData(
+data class TaskContext(
     val taskName: String,
-    val execName: String,
-    val who: String,
-    val type: ActivityType,
-    val date: LocalDate,
+    val beginDate: LocalDate,
+    val endDate: LocalDate,
 )
 
 class TaskViewModel(navController: NavController) : BaseViewModel(navController) {
     var beginDate: LocalDate by mutableStateOf(LocalDate.now().minusDays(5))
     var endDate: LocalDate by mutableStateOf(LocalDate.now().plusDays(13))
+    val taskDatas: List<TaskData> = mutableStateListOf()
 
     fun testData(): TaskData {
         val date = LocalDate.now()
